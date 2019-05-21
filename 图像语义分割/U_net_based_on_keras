@@ -1,0 +1,83 @@
+##以下代码定义网络架构、损失函数和训练方式等。
+
+import numpy as np 
+import pandas as pd 
+import os
+import cv2
+import matplotlib.pyplot as plt
+from tqdm import tqdm_notebook as tqdm
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.layers import Input,Lambda,Dropout,concatenate,Conv2D,Conv2DTranspose,MaxPooling2D,BatchNormalization
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+
+EPOCHS = 8
+BATCH = 2
+VAL_DATA_RATE = 0.1 ##选取1/10的训练数据做测试
+## 应先确定是否有显卡可用
+## device = "cuda:0"
+
+
+
+## 下面的定义了网络架构，并做了简要输出。使用的是一个全卷积的Unet网络，输入图像长宽需要为16的倍数
+
+inputs = Input((None,None,3)) ## 此处不做图像输入规格的限制，但由于Unet的网络架构，实际要求输入图像长宽均为16的倍数
+s = Lambda(lambda x: x / 255) (inputs)
+
+c1 = Conv2D(16,(3,3),strides=(2,2),padding='same',activation='relu')(s)
+c1 = BatchNormalization()(c1)
+c1 = Dropout(0.1)(c1)
+c1 = Conv2D(16,(3,3),padding='same',activation='relu')(c1)
+
+c2 = Conv2D(32,(3,3),strides=(2,2),padding='same',activation='relu')(c1)
+c2 = BatchNormalization()(c2)
+c2 = Dropout(0.1)(c2)
+c2 = Conv2D(32,(3,3),padding='same',activation='relu')(c2)
+
+c3 = Conv2D(64,(3,3),strides=(2,2),padding='same',activation='relu')(c2)
+c3 = BatchNormalization()(c3)
+c3 = Dropout(0.1)(c3)
+c3 = Conv2D(64,(3,3),padding='same',activation='relu')(c3)
+
+c4 = Conv2D(64,(3,3),strides=[2,2],padding='same',activation='relu')(c3)
+c4 = BatchNormalization()(c4)
+c4 = Dropout(0.1)(c4)
+
+
+u4 = Conv2DTranspose(64,(2,2),strides=(2,2),padding='valid',activation='relu')(c4)
+u4 = concatenate([u4,c3])
+u4 = Dropout(0.3)(u4)
+u4 = Conv2D(64,(3,3),padding='same',activation='relu')(u4)
+
+u3 = Conv2DTranspose(32,(2,2),strides=(2,2),padding='same',activation='relu')(u4)
+u3  = concatenate([u3,c2])
+u3=Dropout(0.3)(u3)
+u3 = Conv2D(32,(3,3),padding='same',activation='relu')(u3)
+
+u2 = Conv2DTranspose(16,(2,2),strides=(2,2),padding='same',activation='relu')(u3)
+u2  = concatenate([u2,c1])
+u2=Dropout(0.3)(u2)
+u2 = Conv2D(16,(3,3),padding='same',activation='relu')(u2)
+
+u1 = Conv2DTranspose(16,(2,2),strides=(2,2),padding='same',activation='relu')(u2)
+u1=Dropout(0.3)(u1)
+u1 = Conv2D(8,(3,3),padding='same',activation='relu')(u1)
+
+outputs = Conv2D(1, (1, 1), activation='sigmoid') (u1)
+
+U_Net = Model(inputs=[inputs], outputs=[outputs])
+
+## 使用多分类交叉熵作为损失函数，求解方式为Adam
+U_Net.compile(optimizer='adam', loss='categorical_crossentropy')
+U_Net.summary()
+
+##以下代码用于训练数据，输入数据为X_train:可迭代的对象，其中的每一个item是长、宽为16整数倍的图像。Y_train:输入数据对应的Ground Truth
+## 当连续五个epoch,loss不下降，停止训练
+
+#earlystopper = EarlyStopping(patience=5, verbose=1)
+#checkpointer = ModelCheckpoint('model-semantic-segmantation', verbose=1, save_best_only=True)
+#
+#results = U_Net.fit(X_train, Y_train, validation_split=VAL_DATA_RATE, batch_size=BATCH, epochs=EPOCHS, 
+#                    callbacks=[earlystopper, checkpointer])
