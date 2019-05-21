@@ -1,4 +1,4 @@
-##使用梯度下降法，利用softmax函数实现多分类
+##使用梯度下降法，利用softmax函数实现多分类，损失函数为cross entropy
 ##直接运行此模块时，将使用iris数据测试该函数，需要将数据文件'iris.data'放置在此文件的目录下
 import numpy as np
 import matplotlib.pyplot as plt
