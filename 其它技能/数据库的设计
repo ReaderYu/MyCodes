@@ -1,0 +1,71 @@
+/*以下代码共同完成*/
+/*book表：存储书籍信息;reader表：存储用户信息;reader.donate表：存储用户捐赠记录;reader.history:存储借书记录*/
+
+create schema book;
+go
+create table book.info (
+book_id uniqueidentifier default newsequentialid() primary key,
+/*insert语句可忽略此字段*/
+book_name varchar(100),
+book_amount tinyint default 1,
+publisher varchar(50),
+publish_date date,
+author varchar(50),
+isbn int,
+description text,
+status bit,/*1:在库，0:借出*/
+freq int default 0,/*外借次数*/
+/*freq=count(book.history.out_date)*/
+);
+
+
+create table reader.donate (
+reader_id uniqueidentifier foreign key references reader.info,
+book_id uniqueidentifier foreign key references book.info,
+book_name varchar(100) ,
+donate_date date ,
+freq int /*这本书被外借次数*/
+);
+
+
+
+create table reader.history (
+reader_id uniqueidentifier foreign key references reader.info,
+book_id uniqueidentifier foreign key references book.info,
+grade_it int default null check(grade_it between 1 and 10 or grade_it = null),
+/*前端在借书操作时不出现此input项，只在还书操作中可输入，确保不会出现未阅读就打分的情况*/
+/*在读者schema中设置打分，则可以筛选出personal preference*/
+/*不在书籍schema中设置打分，是不希望其他读者在选择中受到他人偏见干扰*/
+/*默认缺省*/
+out_date date default getdate(),/*默认为增加借还书历史记录当前日期*/
+revenir_date date default '9999/12/31',/*可以以此默认值筛选未还记录*/
+before_isdamage bit default 0,/*借出时书籍状态：0:未损坏，1:严重损坏*/
+after_isdamage bit default 0/*还书时书籍状态：0:未损坏，1：严重损坏*/
+/*增加是否损坏的指标有助于共享图书馆的运行维护
+如果借入时就损坏了怎么办？——
+only when: (before_isdamage==0) && (after_isdamage==1) => 
+update damage_record; violation_num+1
+*/
+);
+
+
+
+create schema reader;
+go
+create table reader.info (
+reader_id uniqueidentifier default newsequentialid() primary key,
+username varchar(10),
+passwords varchar(18) not null check(len(passwords)>=6 and len(passwords)<=18),/*给用户设置密码*/
+violation_num int default 0, /*违规次数:损坏次数+超期次数，这个数值不会清零*/
+donate_num int,/*捐赠次数*/
+damage_record text,/*格式：serial.description;\n*/
+retard_record text,
+donate_record text,
+/*_record结尾字段均通过前端文本框按约定格式录入*/
+suspend_until date default dateadd(day,-1,getdate())
+/*默认账号冻结至昨天*/
+/*在借书触发器book_out判定中使用了此字段*/
+/*在还书触发器book_back中更新此字段*/
+/*无需手动insert此字段记录*/
+/*违规一次冻结15天，冻结状态下可还书不可借书*/
+);
