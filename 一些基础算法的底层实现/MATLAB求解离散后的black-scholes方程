@@ -1,0 +1,97 @@
+%%以下代码使用数值方法求解美式看跌期权定价模型。
+
+%函数createSG用于：使用中心差分的方式离散black-scholes方程，得到相应的线性方程组
+function [S,g] = createSG(sigma,m,r,X,E)
+    h=X/m;
+    a = -((1:m-1).^2*sigma^2-r*(1:m-1))/2;
+    b = (1:m).^2*sigma^2+r;
+    c = -((2:m).^2*sigma^2-r*(2:m))/2;
+    S = sparse(diag(b)+diag(a,-1)+diag(c,1));
+    g = max(E-h*(1:m),0);
+end
+
+%函数forward:前向法解下三角线性方程
+function [X] = forward(L,b)
+    %解方程LX=b，其中L是下三角阵
+    n=length(L);
+    X=zeros(n,1);
+    for i =1:n
+        X(i) = (b(i)-L(i,1:i-1)*X(1:i-1,1))/L(i,i);
+    end
+end
+
+%使用投影超松弛法解线性方程
+function [z,iter,cpu] = mypsor(A,b,m,omega,maxiter)
+    %求解的线性方程为Az=b
+    tol=1e-8;
+    z = zeros(m,1);
+    tic;
+    for iter=1:maxiter
+        for i=1:m
+            k=1:m;
+            z(i) = z(i) + omega*(b(i) - A(i, k)*z(k))/A(i, i);
+            z(i) = max(z(i), 0);
+        end
+        if norm(min(A*z-b,z),2)<tol
+            break;
+        end
+    cpu=toc;
+end
+
+%使用模系超松弛法解线性方程
+function [z,x,iter,cpu,res] = myMSOR(A,q,alpha,maxiter)
+    %求解的线性方程为Az+q=0
+    x=zeros(size(q));
+    D=diag(diag(A));L = D-tril(A);U=D-triu(A);
+    omega=diag(diag(A))*3;
+    tic;
+    for iter=1:maxiter
+        z=abs(x)+x;
+        b = ((1 -alpha)*D + alpha*U)*x + (omega-alpha*A)*abs(x)-alpha*q;
+        res=norm(min(A*z+q,z),2);
+        x=forward(D+omega-alpha*L,b);
+    
+        if res<1e-8
+            break
+        end
+    end
+    cpu=toc;    
+end
+
+%以下MATLAB脚本的内容：对特定参数，离散、求解black-scholes方程并可视化
+sigma=0.6;r=0.25;E=10;X=50;T=1;
+m=100;n=16;%差分规格：对空间[0,X]*[0,1]分别进行100等分和16等分。
+alpha=1.2;maxiter=100;
+h=X/m;tao=T/n;
+[S,g] = createSG(sigma,m,r,X,E);
+u=g';
+U=[g'];
+for j=0:n-1
+    if j==0 || j==1 || j==2 || j==3
+        theta=1;
+    else
+        theta=1/2;
+    end
+    B = speye(m)/tao+theta*S;
+    C =  speye(m)/tao-(1-theta)*S;
+    A = B;
+    q = B*g'-C*U(:,j+1)-[E;zeros(m-1,1)];
+    [z,w,iter,cpu,res] = myMSOR(A,q,alpha,maxiter);
+    U=[U,z+g'];
+end
+mesh(T:-tao:0,h:h:X,U)
+xlabel('时间')
+ylabel('X')
+zlabel('期权价格')
+hold on
+X0 =[];t0=[];
+[dim1,dim2]=size(U);
+for j=1:dim2
+    for i=1:dim1-1
+        if U(i,j)==E-i*h && U(i+1,j)~=E-(i+1)*h
+            X0=[X0,i*h];t0=[t0,T-(j-1)*tao];
+            break;
+        end
+    end
+end
+plot3(t0,X0,zeros(size(X0)),'-r')
